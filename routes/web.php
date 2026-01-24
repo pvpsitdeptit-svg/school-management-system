@@ -13,3 +13,7 @@ Route::get('/test-auth', function () {
 Route::get('/test-attendance', function () {
     return view('test_attendance');
 });
+
+Route::get('/test-exams', function () {
+    return view('test_exams');
+});

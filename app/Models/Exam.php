@@ -5,20 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Exam;
-use App\Models\Mark;
 
-class Student extends Model
+class Exam extends Model
 {
     protected $fillable = [
         'school_id',
-        'user_id',
-        'admission_no',
         'class_id',
+        'name',
         'status',
+        'exam_date',
     ];
 
     protected $casts = [
+        'exam_date' => 'date',
         'status' => 'string',
     ];
 
@@ -27,14 +26,14 @@ class Student extends Model
         return $this->belongsTo(School::class);
     }
 
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
     public function schoolClass(): BelongsTo
     {
         return $this->belongsTo(SchoolClass::class, 'class_id');
+    }
+
+    public function examSubjects(): HasMany
+    {
+        return $this->hasMany(ExamSubject::class);
     }
 
     public function marks(): HasMany
