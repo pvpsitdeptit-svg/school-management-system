@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Auth Test</title>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <h2>Firebase Authentication Test</h2>
+    <p><strong>Project:</strong> studentmanagementsystem-74f48</p>
+    
+    <div id="login-section">
+        <h3>1. Login with Firebase</h3>
+        <input type="email" id="email" placeholder="Email" value="admin@sms.com" size="30"><br><br>
+        <input type="password" id="password" placeholder="Password" value="password" size="30"><br><br>
+        <button onclick="login()">Login with Firebase</button>
+        <button onclick="signup()">Sign Up (if not exists)</button>
+    </div>
+
+    <div id="test-section" style="display:none;">
+        <h3>2. Test API Endpoints</h3>
+        <p><strong>Logged in as:</strong> <span id="user-info"></span></p>
+        
+        <button onclick="testHealth()">Test /api/health (Public)</button><br><br>
+        <button onclick="testMe()">Test /api/me (Auth Required)</button><br><br>
+        <button onclick="testAdmin()">Test /api/admin/dashboard (Admin Only)</button><br><br>
+        <button onclick="testFaculty()">Test /api/faculty/dashboard (Faculty Only)</button><br><br>
+        <button onclick="testStudent()">Test /api/student/profile (Student/Parent Only)</button><br><br>
+        
+        <h4>Results:</h4>
+        <pre id="results" style="background: #f5f5f5; padding: 10px; border-radius: 5px;"></pre>
+    </div>
+
+    <script>
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw",
+            authDomain: "studentmanagementsystem-74f48.firebaseapp.com",
+            databaseURL: "https://studentmanagementsystem-74f48-default-rtdb.firebaseio.com",
+            projectId: "studentmanagementsystem-74f48",
+            storageBucket: "studentmanagementsystem-74f48.firebasestorage.app",
+            messagingSenderId: "986803646077",
+            appId: "1:986803646077:web:3a493bdcc8d418e0914b14",
+            measurementId: "G-64F42VE501"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        let currentUser = null;
+
+        log('Firebase initialized successfully');
+        log('Project: ' + firebaseConfig.projectId);
+        log('Auth Domain: ' + firebaseConfig.authDomain);
+
+        async function signup() {
+            try {
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                
+                const result = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                log(`User created: ${result.user.email}`);
+                
+                // Try login immediately after signup
+                await login();
+                
+            } catch (error) {
+                if (error.code === 'auth/email-already-in-use') {
+                    log('User already exists, trying login...');
+                    await login();
+                } else {
+                    log(`Signup failed: ${error.message}`);
+                }
+            }
+        }
+
+        async function login() {
+            try {
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                
+                const result = await firebase.auth().signInWithEmailAndPassword(email, password);
+                currentUser = result.user;
+                
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('test-section').style.display = 'block';
+                
+                document.getElementById('user-info').textContent = `${currentUser.email} (UID: ${currentUser.uid})`;
+                
+                log(`✅ Logged in as: ${currentUser.email}`);
+                log(`✅ User ID: ${currentUser.uid}`);
+                log(`✅ Ready to test API endpoints`);
+                
+            } catch (error) {
+                log(`❌ Login failed: ${error.message}`);
+                log('💡 Try signing up first if user does not exist');
+            }
+        }
+
+        async function makeRequest(url, description) {
+            try {
+                const token = await currentUser.getIdToken();
+                
+                log(`\n🚀 Requesting: ${description}`);
+                log(`📡 URL: http://localhost:8000${url}`);
+                
+                const response = await fetch(`http://localhost:8000${url}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                
+                log(`📊 Status: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    log(`✅ Success: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    log(`❌ Error: ${JSON.stringify(data, null, 2)}`);
+                }
+                
+            } catch (error) {
+                log(`💥 Network Error: ${error.message}`);
+            }
+        }
+
+        function testHealth() {
+            makeRequest('/api/health', 'Public Health Check');
+        }
+
+        function testMe() {
+            makeRequest('/api/me', 'User Profile (Auth Required)');
+        }
+
+        function testAdmin() {
+            makeRequest('/api/admin/dashboard', 'Admin Dashboard (Admin Only)');
+        }
+
+        function testFaculty() {
+            makeRequest('/api/faculty/dashboard', 'Faculty Dashboard (Faculty Only)');
+        }
+
+        function testStudent() {
+            makeRequest('/api/student/profile', 'Student Profile (Student/Parent Only)');
+        }
+
+        function log(message) {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toLocaleTimeString();
+            results.textContent += `[${timestamp}] ${message}\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+    </script>
+</body>
+</html>
