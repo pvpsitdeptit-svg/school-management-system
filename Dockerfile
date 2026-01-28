@@ -36,6 +36,9 @@ RUN touch database/database.sqlite
 # Generate application key
 RUN php artisan key:generate
 
+# Run database migrations
+RUN php artisan migrate --force
+
 # Expose port
 EXPOSE 8000
 
