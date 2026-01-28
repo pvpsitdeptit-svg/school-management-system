@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'fcm' => [
+        'project_id' => env('FCM_PROJECT_ID'),
+        'private_key' => env('FCM_PRIVATE_KEY'),
+        'client_email' => env('FCM_CLIENT_EMAIL'),
+        'server_key' => env('FCM_SERVER_KEY'), // Fallback for legacy
+    ],
+
 ];

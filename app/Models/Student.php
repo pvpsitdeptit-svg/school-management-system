@@ -41,4 +41,24 @@ class Student extends Model
     {
         return $this->hasMany(Mark::class);
     }
+
+    public function parentStudents(): HasMany
+    {
+        return $this->hasMany(ParentStudent::class);
+    }
+
+    public function parents()
+    {
+        return $this->hasManyThrough(ParentModel::class, ParentStudent::class, 'student_id', 'id', 'id', 'parent_id');
+    }
+
+    public function classHistory(): HasMany
+    {
+        return $this->hasMany(StudentClassHistory::class);
+    }
+
+    public function currentClassHistory()
+    {
+        return $this->hasOne(StudentClassHistory::class)->where('status', 'active');
+    }
 }

@@ -9,6 +9,9 @@ use App\Models\Student;
 use App\Models\Exam;
 use App\Models\ExamSubject;
 use App\Models\Mark;
+use App\Models\Subject;
+use App\Models\FacultySubject;
+use App\Models\DeviceToken;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -64,8 +67,13 @@ Route::middleware(['auth.firebase', 'admin'])->group(function () {
         return response()->json([
             'message' => 'Admin dashboard',
             'data' => [
-                'total_users' => User::count(),
-                'school_users' => User::where('school_id', school_id())->count(),
+                'total_students' => User::where('school_id', school_id())->where('role', 'student')->count(),
+                'total_faculty' => User::where('school_id', school_id())->where('role', 'faculty')->count(),
+                'total_classes' => SchoolClass::where('school_id', school_id())->count(),
+                'total_subjects' => Subject::where('school_id', school_id())->count(),
+                'total_assignments' => FacultySubject::where('school_id', school_id())->count(),
+                'active_classes' => SchoolClass::where('school_id', school_id())->where('status', 'active')->count(),
+                'active_students' => Student::where('school_id', school_id())->where('status', 'active')->count(),
             ]
         ]);
     });
@@ -201,60 +209,375 @@ Route::middleware(['auth.firebase', 'admin'])->group(function () {
             ]
         ]);
     });
-});
-
-Route::middleware(['auth.firebase', 'faculty'])->group(function () {
-    Route::get('/faculty/dashboard', function () {
-        return response()->json([
-            'message' => 'Faculty dashboard',
-            'data' => [
-                'classes' => \App\Models\SchoolClass::where('school_id', school_id())->count(),
-                'subjects' => \App\Models\Subject::where('school_id', school_id())->count(),
-            ]
-        ]);
-    });
     
-    // Get exam subjects for a specific exam (faculty can view)
-    Route::get('/exam-subjects', function (Request $request) {
+    // Class Management APIs
+    Route::post('/admin/classes', function (Request $request) {
         $validated = $request->validate([
-            'exam_id' => 'required|integer',
+            'name' => 'required|string|max:255',
+            'section' => 'required|string|max:10',
+            'status' => 'sometimes|in:active,inactive',
         ]);
         
-        $examSubjects = ExamSubject::with(['exam', 'subject'])
-            ->where('exam_id', $validated['exam_id'])
-            ->whereHas('exam', function ($query) {
-                $query->where('school_id', school_id());
-            })
+        // Check for duplicate class in same school
+        $existingClass = SchoolClass::where('school_id', school_id())
+            ->where('name', $validated['name'])
+            ->where('section', $validated['section'])
+            ->first();
+            
+        if ($existingClass) {
+            return response()->json([
+                'error' => 'Duplicate class',
+                'message' => "Class {$validated['name']}-{$validated['section']} already exists"
+            ], 409);
+        }
+        
+        $class = SchoolClass::create([
+            'school_id' => school_id(),
+            'name' => $validated['name'],
+            'section' => $validated['section'],
+            'status' => $validated['status'] ?? 'active',
+        ]);
+        
+        return response()->json([
+            'message' => 'Class created successfully',
+            'class' => [
+                'id' => $class->id,
+                'name' => $class->name,
+                'section' => $class->section,
+                'status' => $class->status,
+            ]
+        ], 201);
+    });
+    
+    Route::get('/admin/classes', function () {
+        $classes = SchoolClass::where('school_id', school_id())
+            ->orderBy('name')
+            ->orderBy('section')
             ->get()
-            ->map(function ($examSubject) {
+            ->map(function ($class) {
                 return [
-                    'id' => $examSubject->id,
-                    'exam_id' => $examSubject->exam_id,
-                    'exam_name' => $examSubject->exam->name,
-                    'exam_status' => $examSubject->exam->status,
-                    'subject_id' => $examSubject->subject_id,
-                    'subject_name' => $examSubject->subject->name,
-                    'max_marks' => $examSubject->max_marks,
+                    'id' => $class->id,
+                    'name' => $class->name,
+                    'section' => $class->section,
+                    'status' => $class->status,
+                    'students_count' => Student::where('class_id', $class->id)->where('school_id', school_id())->count(),
                 ];
             });
         
         return response()->json([
-            'exam_id' => $validated['exam_id'],
-            'exam_subjects' => $examSubjects
+            'classes' => $classes,
+            'total_classes' => $classes->count()
         ]);
     });
     
-    // Mark attendance for a class
-    Route::post('/faculty/attendance', function (Request $request) {
-        $user = $request->get('authenticated_user');
-        
-        // Validate request
+    Route::put('/admin/classes/{id}', function (Request $request, $id) {
         $validated = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'section' => 'sometimes|required|string|max:10',
+            'status' => 'sometimes|required|in:active,inactive',
+        ]);
+        
+        $class = SchoolClass::where('id', $id)
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$class) {
+            return response()->json([
+                'error' => 'Class not found',
+                'message' => 'Class not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Check for duplicate if name/section is being updated
+        if (isset($validated['name']) || isset($validated['section'])) {
+            $name = $validated['name'] ?? $class->name;
+            $section = $validated['section'] ?? $class->section;
+            
+            $duplicate = SchoolClass::where('school_id', school_id())
+                ->where('name', $name)
+                ->where('section', $section)
+                ->where('id', '!=', $class->id)
+                ->first();
+                
+            if ($duplicate) {
+                return response()->json([
+                    'error' => 'Duplicate class',
+                    'message' => "Class {$name}-{$section} already exists"
+                ], 409);
+            }
+        }
+        
+        $class->update($validated);
+        
+        return response()->json([
+            'message' => 'Class updated successfully',
+            'class' => [
+                'id' => $class->id,
+                'name' => $class->name,
+                'section' => $class->section,
+                'status' => $class->status,
+            ]
+        ]);
+    });
+    
+    Route::delete('/admin/classes/{id}', function ($id) {
+        $class = SchoolClass::where('id', $id)
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$class) {
+            return response()->json([
+                'error' => 'Class not found',
+                'message' => 'Class not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Check if class has students
+        if (Student::where('class_id', $class->id)->where('school_id', school_id())->count() > 0) {
+            return response()->json([
+                'error' => 'Cannot delete',
+                'message' => 'Cannot delete class with enrolled students'
+            ], 400);
+        }
+        
+        $class->delete();
+        
+        return response()->json([
+            'message' => 'Class deleted successfully'
+        ]);
+    });
+    
+    // Subject Master APIs
+    Route::post('/admin/subjects', function (Request $request) {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'code' => 'nullable|string|max:10',
+        ]);
+        
+        // Check for duplicate subject in same school
+        $existingSubject = Subject::where('school_id', school_id())
+            ->where('name', $validated['name'])
+            ->first();
+            
+        if ($existingSubject) {
+            return response()->json([
+                'error' => 'Duplicate subject',
+                'message' => "Subject '{$validated['name']}' already exists"
+            ], 409);
+        }
+        
+        $subject = Subject::create([
+            'school_id' => school_id(),
+            'name' => $validated['name'],
+            'code' => $validated['code'] ?? null,
+        ]);
+        
+        return response()->json([
+            'message' => 'Subject created successfully',
+            'subject' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+                'code' => $subject->code,
+            ]
+        ], 201);
+    });
+    
+    Route::get('/admin/subjects', function () {
+        $subjects = Subject::where('school_id', school_id())
+            ->orderBy('name')
+            ->get()
+            ->map(function ($subject) {
+                return [
+                    'id' => $subject->id,
+                    'name' => $subject->name,
+                    'code' => $subject->code,
+                    'exam_subjects_count' => $subject->examSubjects()->count(),
+                ];
+            });
+        
+        return response()->json([
+            'subjects' => $subjects,
+            'total_subjects' => $subjects->count()
+        ]);
+    });
+    
+    Route::delete('/admin/subjects/{id}', function ($id) {
+        $subject = Subject::where('id', $id)
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$subject) {
+            return response()->json([
+                'error' => 'Subject not found',
+                'message' => 'Subject not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Check if subject is in use
+        if ($subject->examSubjects()->count() > 0) {
+            return response()->json([
+                'error' => 'Cannot delete',
+                'message' => 'Cannot delete subject that is used in exams'
+            ], 400);
+        }
+        
+        // Check if subject is assigned to faculty
+        $facultyAssignments = FacultySubject::where('school_id', school_id())
+            ->where('subject_id', $id)
+            ->count();
+            
+        if ($facultyAssignments > 0) {
+            return response()->json([
+                'error' => 'Cannot delete',
+                'message' => 'Cannot delete subject that is assigned to faculty'
+            ], 400);
+        }
+        
+        $subject->delete();
+        
+        return response()->json([
+            'message' => 'Subject deleted successfully'
+        ]);
+    });
+    
+    Route::delete('/admin/faculty/assignments/{id}', function ($id) {
+        $assignment = FacultySubject::where('id', $id)
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$assignment) {
+            return response()->json([
+                'error' => 'Assignment not found',
+                'message' => 'Faculty assignment not found or does not belong to your school'
+            ], 404);
+        }
+        
+        $assignment->delete();
+        
+        return response()->json([
+            'message' => 'Faculty assignment deleted successfully'
+        ]);
+    });
+    
+    // Faculty Assignment APIs
+    Route::post('/admin/faculty/assign', function (Request $request) {
+        $validated = $request->validate([
+            'faculty_user_id' => 'required|integer',
             'class_id' => 'required|integer',
-            'date' => 'required|date|before_or_equal:today',
-            'attendance' => 'required|array',
-            'attendance.*.student_id' => 'required|integer',
-            'attendance.*.status' => 'required|in:present,absent',
+            'subject_id' => 'required|integer',
+        ]);
+        
+        // Verify faculty belongs to the same school
+        $faculty = User::where('id', $validated['faculty_user_id'])
+            ->where('school_id', school_id())
+            ->where('role', 'faculty')
+            ->first();
+            
+        if (!$faculty) {
+            return response()->json([
+                'error' => 'Invalid faculty',
+                'message' => 'Faculty not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Verify class belongs to the same school
+        $class = SchoolClass::where('id', $validated['class_id'])
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$class) {
+            return response()->json([
+                'error' => 'Invalid class',
+                'message' => 'Class not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Verify subject belongs to the same school
+        $subject = Subject::where('id', $validated['subject_id'])
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$subject) {
+            return response()->json([
+                'error' => 'Invalid subject',
+                'message' => 'Subject not found or does not belong to your school'
+            ], 404);
+        }
+        
+        // Check for duplicate assignment
+        $existingAssignment = FacultySubject::where('faculty_user_id', $validated['faculty_user_id'])
+            ->where('class_id', $validated['class_id'])
+            ->where('subject_id', $validated['subject_id'])
+            ->first();
+            
+        if ($existingAssignment) {
+            return response()->json([
+                'error' => 'Duplicate assignment',
+                'message' => 'Faculty is already assigned to this subject for this class'
+            ], 409);
+        }
+        
+        $assignment = FacultySubject::create([
+            'school_id' => school_id(),
+            'faculty_user_id' => $validated['faculty_user_id'],
+            'class_id' => $validated['class_id'],
+            'subject_id' => $validated['subject_id'],
+        ]);
+        
+        return response()->json([
+            'message' => 'Faculty assigned successfully',
+            'assignment' => [
+                'id' => $assignment->id,
+                'faculty_name' => $faculty->name,
+                'class_name' => $class->name . ' ' . $class->section,
+                'subject_name' => $subject->name,
+            ]
+        ], 201);
+    });
+    
+    Route::get('/admin/faculty/assignments', function () {
+        $assignments = FacultySubject::with(['faculty', 'schoolClass', 'subject'])
+            ->where('school_id', school_id())
+            ->orderBy('faculty_user_id')
+            ->orderBy('class_id')
+            ->orderBy('subject_id')
+            ->get()
+            ->map(function ($assignment) {
+                return [
+                    'id' => $assignment->id,
+                    'faculty' => [
+                        'id' => $assignment->faculty->id,
+                        'name' => $assignment->faculty->name,
+                        'email' => $assignment->faculty->email,
+                    ],
+                    'class' => [
+                        'id' => $assignment->schoolClass->id,
+                        'name' => $assignment->schoolClass->name,
+                        'section' => $assignment->schoolClass->section,
+                    ],
+                    'subject' => [
+                        'id' => $assignment->subject->id,
+                        'name' => $assignment->subject->name,
+                        'code' => $assignment->subject->code,
+                    ],
+                ];
+            });
+        
+        return response()->json([
+            'assignments' => $assignments,
+            'total_assignments' => $assignments->count()
+        ]);
+    });
+    
+    // Student Admission APIs
+    Route::post('/admin/students', function (Request $request) {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'password' => 'required|string|min:6',
+            'admission_no' => 'required|string|max:50',
+            'class_id' => 'required|integer',
+            'status' => 'sometimes|in:active,inactive',
         ]);
         
         // Verify class belongs to the same school
@@ -269,192 +592,167 @@ Route::middleware(['auth.firebase', 'faculty'])->group(function () {
             ], 404);
         }
         
-        // Check for existing attendance before saving
-        $studentIds = collect($validated['attendance'])->pluck('student_id')->toArray();
-        
-        $existingAttendance = Attendance::where('school_id', school_id())
-            ->where('class_id', $validated['class_id'])
-            ->whereDate('date', $validated['date']) // Use whereDate for date comparison
-            ->whereIn('student_id', $studentIds)
-            ->pluck('student_id')
-            ->toArray();
-        
-        if (!empty($existingAttendance)) {
+        // Check for duplicate email
+        $existingUser = User::where('email', $validated['email'])->first();
+        if ($existingUser) {
             return response()->json([
-                'error' => 'Attendance already marked',
-                'message' => 'Attendance already exists for ' . count($existingAttendance) . ' student(s) on this date',
-                'duplicate_students' => $existingAttendance
-            ], 409); // 409 Conflict
+                'error' => 'Duplicate email',
+                'message' => 'Email already exists'
+            ], 409);
         }
         
-        // Get all students in this class
-        $classStudents = Student::where('class_id', $validated['class_id'])
-            ->where('school_id', school_id())
-            ->pluck('id')
-            ->toArray();
-        
-        $attendanceRecords = [];
-        $errors = [];
-        
-        foreach ($validated['attendance'] as $attendanceData) {
-            $studentId = $attendanceData['student_id'];
+        // Check for duplicate admission number in same school
+        $existingStudent = Student::where('school_id', school_id())
+            ->where('admission_no', $validated['admission_no'])
+            ->first();
             
-            // Verify student belongs to this class and school
-            if (!in_array($studentId, $classStudents)) {
-                $errors[] = "Student ID {$studentId} does not belong to this class";
-                continue;
-            }
-            
-            try {
-                // Create or update attendance record
-                Attendance::updateOrCreate(
-                    [
-                        'school_id' => school_id(),
-                        'student_id' => $studentId,
-                        'date' => $validated['date'],
-                    ],
-                    [
-                        'class_id' => $validated['class_id'],
-                        'status' => $attendanceData['status'],
-                        'marked_by' => $user->id,
-                    ]
-                );
-                
-                $attendanceRecords[] = [
-                    'student_id' => $studentId,
-                    'status' => $attendanceData['status']
-                ];
-                
-            } catch (\Exception $e) {
-                $errors[] = "Failed to save attendance for student ID {$studentId}: " . $e->getMessage();
-            }
-        }
-        
-        if (!empty($errors)) {
+        if ($existingStudent) {
             return response()->json([
-                'message' => 'Attendance saved with some errors',
-                'saved_records' => count($attendanceRecords),
-                'errors' => $errors
-            ], 207); // 207 Multi-Status
+                'error' => 'Duplicate admission number',
+                'message' => "Admission number {$validated['admission_no']} already exists"
+            ], 409);
         }
+        
+        // Create user account
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => bcrypt($validated['password']),
+            'role' => 'student',
+            'status' => 'active',
+            'school_id' => school_id(),
+            'firebase_uid' => 'temp_' . uniqid(), // Temporary UID, will be updated later
+        ]);
+        
+        // Create student profile
+        $student = Student::create([
+            'school_id' => school_id(),
+            'user_id' => $user->id,
+            'admission_no' => $validated['admission_no'],
+            'status' => $validated['status'] ?? 'active',
+        ]);
         
         return response()->json([
-            'message' => 'Attendance saved successfully',
-            'saved_records' => count($attendanceRecords),
-            'attendance' => $attendanceRecords
+            'message' => 'Student admitted successfully',
+            'student' => [
+                'id' => $student->id,
+                'user_id' => $user->id,
+                'admission_no' => $student->admission_no,
+                'name' => $user->name,
+                'email' => $user->email,
+                'class' => $class->name . ' ' . $class->section,
+                'status' => $student->status,
+            ]
+        ], 201);
+    });
+    
+    Route::get('/admin/students', function (Request $request) {
+        $query = Student::with(['user', 'schoolClass'])
+            ->where('school_id', school_id());
+            
+        // Filter by class if provided
+        if ($request->has('class_id')) {
+            $query->where('class_id', $request->class_id);
+        }
+        
+        $students = $query->orderBy('admission_no')
+            ->get()
+            ->map(function ($student) {
+                return [
+                    'id' => $student->id,
+                    'user_id' => $student->user_id,
+                    'admission_no' => $student->admission_no,
+                    'name' => $student->user->name,
+                    'email' => $student->user->email,
+                    'class' => [
+                        'id' => $student->schoolClass->id,
+                        'name' => $student->schoolClass->name,
+                        'section' => $student->schoolClass->section,
+                    ],
+                    'status' => $student->status,
+                    'created_at' => $student->created_at->toISOString(),
+                ];
+            });
+        
+        return response()->json([
+            'students' => $students,
+            'total_students' => $students->count()
         ]);
     });
     
-    // Upload marks for exam subject
-    Route::post('/faculty/marks', function (Request $request) {
-        $user = $request->get('authenticated_user');
-        
-        $validated = $request->validate([
-            'exam_subject_id' => 'required|integer',
-            'marks' => 'required|array',
-            'marks.*.student_id' => 'required|integer',
-            'marks.*.marks_obtained' => 'required|integer|min:0',
-        ]);
-        
-        // Verify exam subject exists and belongs to school
-        $examSubject = ExamSubject::with(['exam', 'subject'])
-            ->where('id', $validated['exam_subject_id'])
-            ->whereHas('exam', function ($query) {
-                $query->where('school_id', school_id());
-            })
+    // Publish Exam Results with Notifications
+    Route::post('/admin/exams/{id}/publish', function ($id) {
+        $exam = Exam::where('id', $id)
+            ->where('school_id', school_id())
             ->first();
             
-        if (!$examSubject) {
+        if (!$exam) {
             return response()->json([
-                'error' => 'Invalid exam subject',
-                'message' => 'Exam subject not found or does not belong to your school'
+                'error' => 'Exam not found',
+                'message' => 'Exam not found or does not belong to your school'
             ], 404);
         }
         
-        // Prevent uploading marks to published exams
-        if ($examSubject->exam->status === 'published') {
+        if ($exam->status === 'published') {
             return response()->json([
-                'error' => 'Exam published',
-                'message' => 'Cannot upload marks to published exams'
-            ], 403);
+                'error' => 'Already published',
+                'message' => 'Exam results are already published'
+            ], 400);
         }
+        
+        // Update exam status to published
+        $exam->update(['status' => 'published']);
         
         // Get all students in the exam's class
-        $classStudents = Student::where('class_id', $examSubject->exam->class_id)
-            ->where('school_id', school_id())
-            ->pluck('id')
-            ->toArray();
+        $examSubjects = $exam->examSubjects()->with('subject')->get();
+        $studentIds = [];
         
-        $marksRecords = [];
-        $errors = [];
-        
-        foreach ($validated['marks'] as $markData) {
-            $studentId = $markData['student_id'];
-            $marksObtained = $markData['marks_obtained'];
-            
-            // Verify student belongs to the class
-            if (!in_array($studentId, $classStudents)) {
-                $errors[] = "Student ID {$studentId} does not belong to this class";
-                continue;
-            }
-            
-            // Validate marks against max marks
-            if ($marksObtained > $examSubject->max_marks) {
-                $errors[] = "Marks {$marksObtained} exceed maximum marks {$examSubject->max_marks} for student ID {$studentId}";
-                continue;
-            }
-            
-            try {
-                // Create or update marks record
-                $mark = Mark::updateOrCreate(
-                    [
-                        'school_id' => school_id(),
-                        'exam_id' => $examSubject->exam->id,
-                        'exam_subject_id' => $examSubject->id,
-                        'student_id' => $studentId,
-                    ],
-                    [
-                        'marks_obtained' => $marksObtained,
-                        'entered_by' => $user->id,
-                    ]
-                );
+        foreach ($examSubjects as $examSubject) {
+            $marks = Mark::where('exam_id', $exam->id)
+                ->where('subject_id', $examSubject->subject_id)
+                ->where('school_id', school_id())
+                ->get();
                 
-                $marksRecords[] = [
-                    'student_id' => $studentId,
-                    'marks_obtained' => $marksObtained,
-                    'max_marks' => $examSubject->max_marks,
-                ];
-                
-            } catch (\Exception $e) {
-                $errors[] = "Failed to save marks for student ID {$studentId}: " . $e->getMessage();
+            foreach ($marks as $mark) {
+                $studentIds[] = $mark->student_id;
             }
         }
         
-        if (!empty($errors)) {
-            return response()->json([
-                'message' => 'Marks saved with some errors',
-                'saved_records' => count($marksRecords),
-                'errors' => $errors
-            ], 207); // 207 Multi-Status
+        // Remove duplicates and get unique student IDs
+        $uniqueStudentIds = array_unique($studentIds);
+        
+        // Send notifications to all students
+        if (!empty($uniqueStudentIds)) {
+            $fcmService = new \App\Services\FcmNotificationService();
+            $fcmService->sendExamResultsNotification($uniqueStudentIds, $exam->name);
         }
         
         return response()->json([
-            'message' => 'Marks saved successfully',
-            'saved_records' => count($marksRecords),
-            'exam_subject' => [
-                'id' => $examSubject->id,
-                'exam_name' => $examSubject->exam->name,
-                'subject_name' => $examSubject->subject->name,
-                'max_marks' => $examSubject->max_marks,
-            ],
-            'marks' => $marksRecords
+            'message' => 'Exam results published successfully',
+            'exam' => [
+                'id' => $exam->id,
+                'name' => $exam->name,
+                'status' => $exam->status,
+                'notified_students' => count($uniqueStudentIds)
+            ]
         ]);
     });
-    Route::get('/faculty/attendance', function (Request $request) {
+});
+
+// Faculty Routes
+Route::middleware(['auth.firebase', 'faculty'])->group(function () {
+    // Mark Attendance API with Notification
+    Route::post('/faculty/attendance', function (Request $request) {
         $validated = $request->validate([
             'class_id' => 'required|integer',
             'date' => 'required|date',
+            'attendances' => 'required|array',
+            'attendances.*.student_id' => 'required|integer',
+            'attendances.*.status' => 'required|in:present,absent,leave'
         ]);
+        
+        // Verify faculty belongs to the same school
+        $faculty = auth()->user();
         
         // Verify class belongs to the same school
         $class = SchoolClass::where('id', $validated['class_id'])
@@ -468,230 +766,347 @@ Route::middleware(['auth.firebase', 'faculty'])->group(function () {
             ], 404);
         }
         
-        $attendance = Attendance::with(['student.user'])
-            ->where('school_id', school_id())
-            ->where('class_id', $validated['class_id'])
-            ->where('date', $validated['date'])
-            ->get()
-            ->map(function ($record) {
-                return [
-                    'student_id' => $record->student_id,
-                    'student_name' => $record->student->user->name,
-                    'status' => $record->status,
-                    'marked_by' => $record->markedByUser->name,
-                    'created_at' => $record->created_at,
-                ];
-            });
+        $attendanceRecords = [];
+        $studentsToNotify = [];
+        
+        foreach ($validated['attendances'] as $attendanceData) {
+            // Verify student belongs to the same school and class
+            $student = Student::where('id', $attendanceData['student_id'])
+                ->where('class_id', $validated['class_id'])
+                ->where('school_id', school_id())
+                ->first();
+                
+            if (!$student) {
+                return response()->json([
+                    'error' => 'Invalid student',
+                    'message' => "Student ID {$attendanceData['student_id']} not found in this class"
+                ], 404);
+            }
+            
+            // Check if attendance already exists
+            $existing = Attendance::where('student_id', $attendanceData['student_id'])
+                ->where('date', $validated['date'])
+                ->where('school_id', school_id())
+                ->first();
+                
+            if ($existing) {
+                // Update existing attendance
+                $existing->update([
+                    'status' => $attendanceData['status'],
+                    'marked_by' => $faculty->id
+                ]);
+                $attendanceRecords[] = $existing;
+            } else {
+                // Create new attendance record
+                $attendance = Attendance::create([
+                    'school_id' => school_id(),
+                    'student_id' => $attendanceData['student_id'],
+                    'class_id' => $validated['class_id'],
+                    'date' => $validated['date'],
+                    'status' => $attendanceData['status'],
+                    'marked_by' => $faculty->id
+                ]);
+                $attendanceRecords[] = $attendance;
+            }
+            
+            // Collect student IDs for notifications
+            $studentsToNotify[] = [
+                'id' => $student->id,
+                'name' => $student->user->name
+            ];
+        }
+        
+        // Send notifications to all students
+        $fcmService = new \App\Services\FcmNotificationService();
+        $formattedDate = \Carbon\Carbon::parse($validated['date'])->format('d M');
+        
+        foreach ($studentsToNotify as $student) {
+            $attendanceStatus = collect($validated['attendances'])
+                ->firstWhere('student_id', $student['id'])['status'];
+                
+            $fcmService->sendAttendanceNotification(
+                $student['id'],
+                $student['name'],
+                $formattedDate,
+                $attendanceStatus
+            );
+        }
         
         return response()->json([
-            'class_id' => $validated['class_id'],
+            'message' => 'Attendance marked successfully',
+            'attendance_count' => count($attendanceRecords),
             'date' => $validated['date'],
-            'attendance' => $attendance
+            'class' => $class->name . ' ' . $class->section
         ]);
     });
 });
 
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'OK',
+        'message' => 'API is reachable'
+    ]);
+});
+
 Route::middleware(['auth.firebase', 'student.or.parent'])->group(function () {
-    Route::get('/student/profile', function (Request $request) {
-        $user = $request->get('authenticated_user');
+    // Enhanced attendance endpoint for Android app
+    Route::get('/student/attendance', function (Request $request) {
+        $student = Student::where('user_id', auth()->id())
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$student) {
+            return response()->json([
+                'error' => 'Student not found',
+                'message' => 'Student profile not found'
+            ], 404);
+        }
+        
+        $query = Attendance::with(['schoolClass'])
+            ->where('student_id', $student->id)
+            ->where('school_id', school_id());
+            
+        // Filter by month if provided
+        if ($request->has('month')) {
+            $month = $request->month; // Format: YYYY-MM
+            $query->whereRaw("strftime('%Y-%m', date) = ?", [$month]);
+        }
+        
+        $attendances = $query->orderBy('date', 'desc')
+            ->get()
+            ->map(function ($attendance) {
+                return [
+                    'id' => $attendance->id,
+                    'date' => $attendance->date,
+                    'status' => $attendance->status,
+                    'class' => [
+                        'name' => $attendance->schoolClass->name,
+                        'section' => $attendance->schoolClass->section,
+                    ],
+                    'marked_by' => $attendance->markedBy->name ?? null,
+                ];
+            });
+        // Calculate statistics
+        $totalDays = $attendances->count();
+        $presentDays = $attendances->where('status', 'present')->count();
+        $absentDays = $attendances->where('status', 'absent')->count();
+        $percentage = $totalDays > 0 ? round(($presentDays / $totalDays) * 100, 2) : 0;
         
         return response()->json([
-            'message' => 'Student/Parent profile',
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
+            'student' => [
+                'id' => $student->id,
+                'admission_no' => $student->admission_no,
+                'name' => $student->user->name,
+                'class' => $student->schoolClass->name . ' ' . $student->schoolClass->section,
+            ],
+            'attendances' => $attendances,
+            'statistics' => [
+                'total_days' => $totalDays,
+                'present_days' => $presentDays,
+                'absent_days' => $absentDays,
+                'attendance_percentage' => $percentage,
+            ],
+            'available_months' => Attendance::where('student_id', $student->id)
+                ->where('school_id', school_id())
+                ->selectRaw("DISTINCT strftime('%Y-%m', date) as month")
+                ->orderBy('month', 'desc')
+                ->pluck('month')
+        ]);
+    });
+    
+    // Enhanced marks endpoint for Android app
+    Route::get('/student/marks', function (Request $request) {
+        $student = Student::where('user_id', auth()->id())
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$student) {
+            return response()->json([
+                'error' => 'Student not found',
+                'message' => 'Student profile not found'
+            ], 404);
+        }
+        
+        // Get all marks for the student with exam and subject details
+        $marks = Mark::with(['exam', 'examSubject', 'examSubject.subject'])
+            ->where('student_id', $student->id)
+            ->whereHas('exam', function ($query) {
+                $query->where('school_id', school_id())->where('status', 'published');
+            })
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('exam_id');
+        
+        $examsData = [];
+        $totalMarks = 0;
+        $totalMaxMarks = 0;
+        
+        foreach ($marks as $examId => $examMarks) {
+            $exam = $examMarks->first()->exam;
+            $subjectsData = [];
+            $examTotal = 0;
+            $examMaxTotal = 0;
+            
+            foreach ($examMarks as $mark) {
+                $subjectsData[] = [
+                    'subject' => [
+                        'name' => $mark->examSubject->subject->name,
+                        'code' => $mark->examSubject->subject->code,
+                    ],
+                    'marks_obtained' => $mark->marks_obtained,
+                    'max_marks' => $mark->examSubject->max_marks,
+                    'percentage' => $mark->examSubject->max_marks > 0 
+                        ? round(($mark->marks_obtained / $mark->examSubject->max_marks) * 100, 2) 
+                        : 0,
+                ];
+                $examTotal += $mark->marks_obtained;
+                $examMaxTotal += $mark->examSubject->max_marks;
+            }
+            
+            $examsData[] = [
+                'exam' => [
+                    'id' => $exam->id,
+                    'name' => $exam->name,
+                    'exam_date' => $exam->exam_date,
+                ],
+                'subjects' => $subjectsData,
+                'exam_statistics' => [
+                    'total_marks_obtained' => $examTotal,
+                    'total_max_marks' => $examMaxTotal,
+                    'percentage' => $examMaxTotal > 0 ? round(($examTotal / $examMaxTotal) * 100, 2) : 0,
+                ],
+            ];
+            
+            $totalMarks += $examTotal;
+            $totalMaxMarks += $examMaxTotal;
+        }
+        
+        return response()->json([
+            'student' => [
+                'id' => $student->id,
+                'admission_no' => $student->admission_no,
+                'name' => $student->user->name,
+                'class' => $student->schoolClass->name . ' ' . $student->schoolClass->section,
+            ],
+            'exams' => $examsData,
+            'overall_statistics' => [
+                'total_exams' => count($examsData),
+                'total_marks_obtained' => $totalMarks,
+                'total_max_marks' => $totalMaxMarks,
+                'overall_percentage' => $totalMaxMarks > 0 ? round(($totalMarks / $totalMaxMarks) * 100, 2) : 0,
+            ],
+        ]);
+    });
+    
+    // Profile endpoint for Android app
+    Route::get('/student/profile', function () {
+        $student = Student::with(['user', 'schoolClass', 'school'])
+            ->where('user_id', auth()->id())
+            ->where('school_id', school_id())
+            ->first();
+            
+        if (!$student) {
+            return response()->json([
+                'error' => 'Student not found',
+                'message' => 'Student profile not found'
+            ], 404);
+        }
+        
+        return response()->json([
+            'student' => [
+                'id' => $student->id,
+                'admission_no' => $student->admission_no,
+                'name' => $student->user->name,
+                'email' => $student->user->email,
+                'class' => [
+                    'id' => $student->schoolClass->id,
+                    'name' => $student->schoolClass->name,
+                    'section' => $student->schoolClass->section,
+                ],
+                'school' => [
+                    'id' => $student->school->id,
+                    'name' => $student->school->name,
+                ],
+                'status' => $student->status,
+                'created_at' => $student->created_at->toISOString(),
             ]
         ]);
     });
     
-    // View marks for student/parent
-    Route::get('/student/marks', function (Request $request) {
-        $user = $request->get('authenticated_user');
-        
-        // Get student(s) based on user role
-        $studentIds = [];
-        
-        if ($user->role === 'student') {
-            // Student can only see their own marks
-            $student = Student::where('user_id', $user->id)
-                ->where('school_id', school_id())
-                ->first();
-            
-            if (!$student) {
-                return response()->json([
-                    'error' => 'Student profile not found',
-                    'message' => 'No student profile found for this user'
-                ], 404);
-            }
-            
-            $studentIds = [$student->id];
-        } elseif ($user->role === 'parent') {
-            // Parent can see their children's marks
-            $students = Student::where('school_id', school_id())
-                ->where('parent_user_id', $user->id) // This field needs to be added to students table
-                ->pluck('id')
-                ->toArray();
-            
-            if (empty($students)) {
-                return response()->json([
-                    'error' => 'No children found',
-                    'message' => 'No students linked to this parent account'
-                ], 404);
-            }
-            
-            $studentIds = $students;
-        }
-        
-        // Get marks for published exams only
-        $marks = Mark::with([
-                'student.user',
-                'examSubject.exam',
-                'examSubject.subject'
-            ])
-            ->whereIn('student_id', $studentIds)
+    // FCM Token endpoint for Android app
+    Route::post('/student/fcm-token', function (Request $request) {
+        $student = Student::where('user_id', auth()->id())
             ->where('school_id', school_id())
-            ->whereHas('examSubject.exam', function ($query) {
-                $query->where('status', 'published');
-            })
-            ->orderBy('exam_id')
-            ->orderBy('student_id')
-            ->get();
-        
-        // Group by exam and student for response
-        $marksByExam = [];
-        foreach ($marks as $mark) {
-            $examId = $mark->exam_id;
-            $studentId = $mark->student_id;
+            ->first();
             
-            if (!isset($marksByExam[$examId])) {
-                $marksByExam[$examId] = [
-                    'exam_id' => $examId,
-                    'exam_name' => $mark->examSubject->exam->name,
-                    'students' => []
-                ];
-            }
-            
-            if (!isset($marksByExam[$examId]['students'][$studentId])) {
-                $marksByExam[$examId]['students'][$studentId] = [
-                    'student_id' => $studentId,
-                    'student_name' => $mark->student->user->name,
-                    'subjects' => []
-                ];
-            }
-            
-            $marksByExam[$examId]['students'][$studentId]['subjects'][] = [
-                'subject_name' => $mark->examSubject->subject->name,
-                'marks_obtained' => $mark->marks_obtained,
-                'max_marks' => $mark->examSubject->max_marks,
-                'percentage' => round(($mark->marks_obtained / $mark->examSubject->max_marks) * 100, 2)
-            ];
+        if (!$student) {
+            return response()->json([
+                'error' => 'Student not found',
+                'message' => 'Student profile not found'
+            ], 404);
         }
+        
+        $request->validate([
+            'fcm_token' => 'required|string|max:255'
+        ]);
+        
+        // Update or create FCM token record
+        $student->fcm_token = $request->fcm_token;
+        $student->save();
         
         return response()->json([
-            'exams' => array_values($marksByExam),
-            'total_exams' => count($marksByExam)
+            'message' => 'FCM token updated successfully',
+            'fcm_token' => $request->fcm_token
         ]);
     });
-    Route::get('/student/attendance', function (Request $request) {
-        $user = $request->get('authenticated_user');
-        
-        // Validate request
+    
+    // Device Token API
+    Route::post('/device-token', function (Request $request) {
         $validated = $request->validate([
-            'month' => 'required|integer|min:1|max:12',
-            'year' => 'required|integer|min:2020|max:2030',
+            'fcm_token' => 'required|string|max:255',
+            'device_type' => 'sometimes|string|in:android,ios'
         ]);
         
-        // Get student(s) based on user role
-        $studentIds = [];
+        $user = auth()->user();
+        $deviceType = $validated['device_type'] ?? 'android';
         
-        if ($user->role === 'student') {
-            // Student can only see their own attendance
-            $student = Student::where('user_id', $user->id)
-                ->where('school_id', school_id())
-                ->first();
-            
-            if (!$student) {
-                return response()->json([
-                    'error' => 'Student profile not found',
-                    'message' => 'No student profile found for this user'
-                ], 404);
-            }
-            
-            $studentIds = [$student->id];
-        } elseif ($user->role === 'parent') {
-            // Parent can see their children's attendance
-            // For now, we'll assume parent-student relationship is stored in students table
-            // In a real system, you'd have a separate parent_student_relationship table
-            $students = Student::where('school_id', school_id())
-                ->where('parent_user_id', $user->id) // This field needs to be added to students table
-                ->pluck('id')
-                ->toArray();
-            
-            if (empty($students)) {
-                return response()->json([
-                    'error' => 'No children found',
-                    'message' => 'No students linked to this parent account'
-                ], 404);
-            }
-            
-            $studentIds = $students;
-        }
-        
-        // Calculate date range for the month
-        $startDate = sprintf('%04d-%02d-01', $validated['year'], $validated['month']);
-        $endDate = date('Y-m-t', strtotime($startDate));
-        
-        // Get attendance records
-        $attendanceRecords = Attendance::with(['student.user', 'student.schoolClass'])
-            ->whereIn('student_id', $studentIds)
+        // Find student record for this user
+        $student = Student::where('user_id', $user->id)
             ->where('school_id', school_id())
-            ->whereBetween('date', [$startDate, $endDate])
-            ->orderBy('date')
-            ->orderBy('student_id')
-            ->get();
+            ->first();
         
-        // Calculate statistics
-        $totalDays = $attendanceRecords->count();
-        $presentDays = $attendanceRecords->where('status', 'present')->count();
-        $absentDays = $attendanceRecords->where('status', 'absent')->count();
-        
-        // Group by student for response
-        $attendanceByStudent = [];
-        foreach ($attendanceRecords as $record) {
-            $studentId = $record->student_id;
-            
-            if (!isset($attendanceByStudent[$studentId])) {
-                $attendanceByStudent[$studentId] = [
-                    'student_id' => $studentId,
-                    'student_name' => $record->student->user->name,
-                    'class_name' => $record->student->schoolClass->name . ' ' . $record->student->schoolClass->section,
-                    'total_days' => 0,
-                    'present' => 0,
-                    'absent' => 0,
-                    'records' => []
-                ];
-            }
-            
-            $attendanceByStudent[$studentId]['total_days']++;
-            $attendanceByStudent[$studentId][$record->status]++;
-            $attendanceByStudent[$studentId]['records'][] = [
-                'date' => $record->date,
-                'status' => $record->status
-            ];
-        }
+        // Update or create device token
+        $deviceToken = DeviceToken::updateOrCreateToken([
+            'user_id' => $user->id,
+            'student_id' => $student?->id,
+            'school_id' => school_id(),
+            'fcm_token' => $validated['fcm_token'],
+            'device_type' => $deviceType
+        ]);
         
         return response()->json([
-            'month' => $validated['month'],
-            'year' => $validated['year'],
-            'total_students' => count($attendanceByStudent),
-            'summary' => [
-                'total_days' => $totalDays,
-                'present' => $presentDays,
-                'absent' => $absentDays,
-                'attendance_percentage' => $totalDays > 0 ? round(($presentDays / $totalDays) * 100, 2) : 0
-            ],
-            'students' => array_values($attendanceByStudent)
+            'message' => 'Device token saved successfully',
+            'device_token' => [
+                'id' => $deviceToken->id,
+                'fcm_token' => $deviceToken->fcm_token,
+                'device_type' => $deviceToken->device_type,
+                'last_used_at' => $deviceToken->last_used_at
+            ]
+        ]);
+    });
+    
+    // Remove device token (logout)
+    Route::delete('/device-token', function (Request $request) {
+        $validated = $request->validate([
+            'fcm_token' => 'required|string',
+            'device_type' => 'sometimes|string|in:android,ios'
+        ]);
+        
+        $deviceType = $validated['device_type'] ?? 'android';
+        $deleted = DeviceToken::removeToken($validated['fcm_token'], $deviceType);
+        
+        return response()->json([
+            'message' => $deleted ? 'Device token removed successfully' : 'Device token not found'
         ]);
     });
 });

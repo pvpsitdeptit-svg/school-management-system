@@ -38,6 +38,19 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+    
+    /**
+     * Boot the model.
+     */
+    protected static function booted()
+    {
+        static::saving(function ($user) {
+            // Enforce Firebase UID constraint for non-super-admin users
+            if ($user->role !== 'super_admin' && empty($user->firebase_uid)) {
+                throw new \Exception('Firebase UID is required for non-super-admin users');
+            }
+        });
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -62,5 +75,10 @@ class User extends Authenticatable
     public function student(): HasOne
     {
         return $this->hasOne(Student::class);
+    }
+
+    public function parentModel(): HasOne
+    {
+        return $this->hasOne(ParentModel::class);
     }
 }

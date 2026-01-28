@@ -1,0 +1,10 @@
+# Firebase Configuration - ADD THESE TO YOUR .env FILE
+
+FIREBASE_API_KEY=AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw
+FIREBASE_PROJECT_ID=studentmanagementsystem-74f48
+FIREBASE_AUTH_DOMAIN=studentmanagementsystem-74f48.firebaseapp.com
+FIREBASE_DATABASE_URL=https://studentmanagementsystem-74f48-default-rtdb.firebaseio.com
+FIREBASE_STORAGE_BUCKET=studentmanagementsystem-74f48.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=986803646077
+FIREBASE_APP_ID=1:986803646077:web:3a493bdcc8d418e0914b14
+FIREBASE_MEASUREMENT_ID=G-64F42VE501

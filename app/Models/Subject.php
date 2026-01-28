@@ -5,13 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Subject extends Model
 {
     protected $fillable = [
         'school_id',
-        'class_id',
         'name',
+        'code',
     ];
 
     public function school(): BelongsTo
@@ -19,8 +20,8 @@ class Subject extends Model
         return $this->belongsTo(School::class);
     }
 
-    public function schoolClass(): BelongsTo
+    public function examSubjects(): HasMany
     {
-        return $this->belongsTo(SchoolClass::class, 'class_id');
+        return $this->hasMany(ExamSubject::class);
     }
 }

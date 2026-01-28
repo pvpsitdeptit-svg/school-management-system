@@ -17,6 +17,15 @@ class IdentifySchool
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // Skip school identification for auth routes and super admin routes
+        $excludedRoutes = ['/login', '/logout', '/super-admin'];
+        
+        foreach ($excludedRoutes as $route) {
+            if ($request->is($route) || $request->is($route . '*')) {
+                return $next($request);
+            }
+        }
+        
         $school = null;
         
         // Try to identify school by subdomain first
