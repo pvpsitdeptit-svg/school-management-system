@@ -30,6 +30,9 @@ RUN composer install --no-dev --optimize-autoloader
 # Copy .env.example to .env
 RUN cp .env.example .env
 
+# Create SQLite database file if using SQLite
+RUN touch database/database.sqlite
+
 # Generate application key
 RUN php artisan key:generate
 
