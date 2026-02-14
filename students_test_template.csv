@@ -1,4 +1,0 @@
-first_name,last_name,email,phone,date_of_birth,gender,address,password,status,admission_no
-John,Doe,john.doe@school.com,+1234567890,2005-05-15,male,123 Main Street,student123,active,STU20240001
-Jane,Smith,jane.smith@school.com,+1234567891,2005-08-22,female,456 Oak Avenue,student123,active,STU20240002
-Michael,Johnson,michael.j@school.com,+1234567892,2005-03-10,male,789 Pine Road,student123,active,STU20240003
