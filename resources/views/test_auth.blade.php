@@ -7,7 +7,7 @@
 </head>
 <body>
     <h2>Firebase Authentication Test</h2>
-    <p><strong>Project:</strong> studentmanagementsystem-74f48</p>
+    <p><strong>Project:</strong> your-project-id</p>
     
     <div id="login-section">
         <h3>1. Login with Firebase</h3>
@@ -32,16 +32,16 @@
     </div>
 
     <script>
-        // Your Firebase configuration
+        // Your Firebase configuration - Replace with your actual config from .env
         const firebaseConfig = {
-            apiKey: "AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw",
-            authDomain: "studentmanagementsystem-74f48.firebaseapp.com",
-            databaseURL: "https://studentmanagementsystem-74f48-default-rtdb.firebaseio.com",
-            projectId: "studentmanagementsystem-74f48",
-            storageBucket: "studentmanagementsystem-74f48.firebasestorage.app",
-            messagingSenderId: "986803646077",
-            appId: "1:986803646077:web:3a493bdcc8d418e0914b14",
-            measurementId: "G-64F42VE501"
+            apiKey: "your-api-key",
+            authDomain: "your-project.firebaseapp.com",
+            databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+            projectId: "your-project-id",
+            storageBucket: "your-project.firebasestorage.app",
+            messagingSenderId: "your-sender-id",
+            appId: "your-app-id",
+            measurementId: "your-measurement-id"
         };
 
         // Initialize Firebase

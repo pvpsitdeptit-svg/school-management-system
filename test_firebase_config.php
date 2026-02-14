@@ -10,8 +10,8 @@ $kernel->bootstrap();
 echo "=== TESTING FIREBASE CONFIGURATION ===\n";
 
 // Test with your actual Firebase credentials
-$apiKey = "AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw";
-$projectId = "studentmanagementsystem-74f48";
+$apiKey = "your-api-key";
+$projectId = "your-project-id";
 
 echo "API Key: " . substr($apiKey, 0, 10) . "...\n";
 echo "Project ID: {$projectId}\n\n";
@@ -63,9 +63,9 @@ if ($httpCode === 200 && isset($result['users'][0])) {
 
 echo "\n=== NEXT STEPS ===\n";
 echo "1. Add these to your .env file:\n\n";
-echo "FIREBASE_API_KEY=AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw\n";
-echo "FIREBASE_PROJECT_ID=studentmanagementsystem-74f48\n";
-echo "FIREBASE_AUTH_DOMAIN=studentmanagementsystem-74f48.firebaseapp.com\n\n";
+echo "FIREBASE_API_KEY=your-api-key\n";
+echo "FIREBASE_PROJECT_ID=your-project-id\n";
+echo "FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com\n\n";
 echo "2. Run: php artisan cache:clear\n";
 echo "3. Try login at: http://localhost:8080/login\n";
 echo "4. Use: unnikiranj@gmail.com / 12345678\n";

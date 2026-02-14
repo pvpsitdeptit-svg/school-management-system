@@ -10,8 +10,8 @@ $kernel->bootstrap();
 echo "=== TESTING FIREBASE TOKEN VERIFICATION ===\n";
 
 // Test with your actual Firebase credentials
-$apiKey = "AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw";
-$projectId = "studentmanagementsystem-74f48";
+$apiKey = "your-api-key";
+$projectId = "your-project-id";
 
 echo "API Key: " . substr($apiKey, 0, 10) . "...\n";
 echo "Project ID: {$projectId}\n\n";
@@ -38,14 +38,14 @@ if ($httpCode === 200) {
     echo "Token verification endpoint is accessible.\n";
     
     echo "\n=== ADD THESE TO YOUR .env FILE ===\n\n";
-    echo "FIREBASE_API_KEY=AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw\n";
-    echo "FIREBASE_PROJECT_ID=studentmanagementsystem-74f48\n";
-    echo "FIREBASE_AUTH_DOMAIN=studentmanagementsystem-74f48.firebaseapp.com\n";
-    echo "FIREBASE_DATABASE_URL=https://studentmanagementsystem-74f48-default-rtdb.firebaseio.com\n";
-    echo "FIREBASE_STORAGE_BUCKET=studentmanagementsystem-74f48.firebasestorage.app\n";
-    echo "FIREBASE_MESSAGING_SENDER_ID=986803646077\n";
-    echo "FIREBASE_APP_ID=1:986803646077:web:3a493bdcc8d418e0914b14\n";
-    echo "FIREBASE_MEASUREMENT_ID=G-64F42VE501\n\n";
+    echo "FIREBASE_API_KEY=your-api-key\n";
+    echo "FIREBASE_PROJECT_ID=your-project-id\n";
+    echo "FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com\n";
+    echo "FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com\n";
+    echo "FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app\n";
+    echo "FIREBASE_MESSAGING_SENDER_ID=your-sender-id\n";
+    echo "FIREBASE_APP_ID=1:your-sender-id:web:your-app-id\n";
+    echo "FIREBASE_MEASUREMENT_ID=your-measurement-id\n\n";
     
     echo "=== NEXT STEPS ===\n";
     echo "1. Add the above to your .env file\n";

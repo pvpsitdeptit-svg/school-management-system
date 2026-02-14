@@ -7,7 +7,7 @@
 </head>
 <body>
     <h2>Week 6 Android App API Testing</h2>
-    <p><strong>Project:</strong> studentmanagementsystem-74f48</p>
+    <p><strong>Project:</strong> your-project-id</p>
     
     <div id="login-section">
         <h3>1. Login (Student/Parent)</h3>
@@ -39,9 +39,9 @@
     <script>
         // Firebase configuration
         const firebaseConfig = {
-            apiKey: "AIzaSyBa1_z-kgywejMSOn_aCPNqr_fpuWt9Ukw",
-            authDomain: "studentmanagementsystem-74f48.firebaseapp.com",
-            projectId: "studentmanagementsystem-74f48",
+            apiKey: "your-api-key",
+            authDomain: "your-project-id.firebaseapp.com",
+            projectId: "your-project-id",
         };
 
         firebase.initializeApp(firebaseConfig);

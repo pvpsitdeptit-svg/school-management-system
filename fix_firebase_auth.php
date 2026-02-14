@@ -19,7 +19,7 @@ if (file_exists($envFile)) {
 
 // Add FIREBASE_PROJECT_ID if not exists
 if (!str_contains($envContent, 'FIREBASE_PROJECT_ID=')) {
-    $envContent .= "\n# Firebase Authentication\nFIREBASE_PROJECT_ID=studentmanagementsystem-74f48\n";
+    $envContent .= "\n# Firebase Authentication\nFIREBASE_PROJECT_ID=your-project-id\n";
     echo "✅ Added FIREBASE_PROJECT_ID\n";
 } else {
     echo "ℹ️  FIREBASE_PROJECT_ID already exists\n";
